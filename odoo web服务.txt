@@ -1,0 +1,130 @@
+odoo提供两种RPC接口， XML-RPC和JSON-RPC。
+
+XML-RPC库
+
+使用python内置的xmlrpclib
+
+import xmlrpclib
+
+root = 'http://%s:%d/xmlrpc/' % (HOST, PORT)
+
+uid = xmlrpclib.ServerProxy(root + 'common').login(DB, USER, PASS)
+print "Logged in as %s (uid: %d)" % (USER, uid)
+
+# Create a new note
+sock = xmlrpclib.ServerProxy(root + 'object')
+args = {
+    'color' : 8,
+    'memo' : 'This is a note',
+    'create_uid': uid,
+}
+note_id = sock.execute(DB, uid, PASS, 'note.note', 'create', args)
+练习
+
+import functools
+import xmlrpclib
+HOST = 'localhost'
+PORT = 8069
+DB = 'openacademy'
+USER = 'admin'
+PASS = 'admin'
+ROOT = 'http://%s:%d/xmlrpc/' % (HOST,PORT)
+
+# 1. Login
+uid = xmlrpclib.ServerProxy(ROOT + 'common').login(DB,USER,PASS)
+print "Logged in as %s (uid:%d)" % (USER,uid)
+
+call = functools.partial(
+    xmlrpclib.ServerProxy(ROOT + 'object').execute,
+    DB, uid, PASS)
+
+# 2. Read the sessions
+sessions = call('openacademy.session','search_read', [], ['name','seats'])
+for session in sessions:
+    print "Session %s (%s seats)" % (session['name'], session['seats'])
+# 3.create a new session
+session_id = call('openacademy.session', 'create', {
+    'name' : 'My session',
+    'course_id' : 2,
+})
+# 改写第三步 通过查询课程名称取得course_id
+# 3.create a new session for the "Functional" course
+course_id = call('openacademy.course', 'search', [('name','ilike','Functional')])[0]
+session_id = call('openacademy.session', 'create', {
+    'name' : 'My session',
+    'course_id' : course_id,
+})
+注意 USER 和 PASS是user表中的数据，不是数据库的用户名和密码
+
+JSON-RPC
+
+下面的例子使用urllib2发送jsonrpc请求
+
+import json
+import random
+import urllib2
+
+def json_rpc(url, method, params):
+    data = {
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params,
+        "id": random.randint(0, 1000000000),
+    }
+    req = urllib2.Request(url=url, data=json.dumps(data), headers={
+        "Content-Type":"application/json",
+    })
+    reply = json.load(urllib2.urlopen(req))
+    if reply.get("error"):
+        raise Exception(reply["error"])
+    return reply["result"]
+
+def call(url, service, method, *args):
+    return json_rpc(url, "call", {"service": service, "method": method, "args": args})
+
+# log in the given database
+url = "http://%s:%s/jsonrpc" % (HOST, PORT)
+uid = call(url, "common", "login", DB, USER, PASS)
+
+# create a new note
+args = {
+    'color' : 8,
+    'memo' : 'This is another note',
+    'create_uid': uid,
+}
+note_id = call(url, "object", "execute", DB, uid, PASS, 'note.note', 'create', args)
+
+使用 jsonrpclib
+
+pip install jsonrpclib
+import jsonrpclib
+
+# server proxy object
+url = "http://%s:%s/jsonrpc" % (HOST, PORT)
+server = jsonrpclib.Server(url)
+
+# log in the given database
+uid = server.call(service="common", method="login", args=[DB, USER, PASS])
+
+# helper function for invoking model methods
+def invoke(model, method, *args):
+    args = [DB, uid, PASS, model, method] + list(args)
+    return server.call(service="object", method="execute", args=args)
+
+# create a new note
+args = {
+    'color' : 8,
+    'memo' : 'This is another note',
+    'create_uid': uid,
+}
+note_id = invoke('note.note', 'create', args)
+更多api包装
+https://github.com/akretion/ooor
+https://github.com/syleam/openobject-library
+https://github.com/nicolas-van/openerp-client-lib
+https://pypi.python.org/pypi/oersted/
+https://github.com/abhishek-jaiswal/php-openerp-lib
+
+参考
+https://www.odoo.com/documentation/8.0/howtos/backend.html#webservice
+https://www.odoo.com/documentation/10.0/api_integration.html
